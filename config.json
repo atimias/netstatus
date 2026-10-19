@@ -5,5 +5,7 @@
   "interval": 5000,
   "pingTimeout": 1000,
   "tcpTimeout": 1000,
-  "concurrency": 64
+  "concurrency": 64,
+  "dnsTtl": 3600,
+  "dnsTimeout": 3000
 }

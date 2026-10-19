@@ -1,15 +1,20 @@
 'use strict';
 
+// dns.lookup działa w puli wątków libuv (domyślnie 4) – przy wielu nazwach to wąskie gardło
+process.env.UV_THREADPOOL_SIZE ||= '32';
+
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const net = require('net');
+const dns = require('dns');
 const { execFile } = require('child_process');
 
 const ROOT = __dirname;
 const HOSTS_FILE = path.join(ROOT, 'hosts.json');
 const CONFIG_FILE = path.join(ROOT, 'config.json');
 const PUBLIC_DIR = path.join(ROOT, 'public');
+const DNS_CACHE_FILE = path.join(ROOT, 'dns-cache.json');
 
 const DEFAULTS = {
   port: 80,          // port TCP testowany na każdym hoście
@@ -19,6 +24,8 @@ const DEFAULTS = {
   pingTimeout: 1000, // ms
   tcpTimeout: 1000,  // ms
   concurrency: 64,   // ile hostów sprawdzać równolegle
+  dnsTtl: 3600,      // s – po tym czasie nazwa jest odświeżana w tle (stary IP używany do tego czasu)
+  dnsTimeout: 3000,  // ms – limit czasu pierwszego rozwiązania nazwy
 };
 
 // ---------- wczytywanie plików ----------
@@ -96,12 +103,74 @@ function tcpCheck(host, port, timeoutMs) {
   });
 }
 
+// ---------- cache DNS ----------
+// Nazwa jest rozwiązywana raz, potem ping i TCP idą bezpośrednio na IP.
+// Cache trafia do dns-cache.json, więc po restarcie nie trzeba czekać na DNS.
+
+const dnsCache = new Map(); // nazwa -> { ip, resolvedAt }
+const dnsPending = new Map(); // nazwa -> Promise
+let dnsSaveTimer = null;
+
+try {
+  for (const [name, e] of Object.entries(JSON.parse(fs.readFileSync(DNS_CACHE_FILE, 'utf8')))) {
+    if (e && net.isIP(e.ip)) dnsCache.set(name, e);
+  }
+} catch { /* brak pliku – pusty cache */ }
+
+function saveDnsCache() {
+  clearTimeout(dnsSaveTimer);
+  dnsSaveTimer = setTimeout(() => {
+    fs.writeFile(DNS_CACHE_FILE, JSON.stringify(Object.fromEntries(dnsCache), null, 2) + '\n', (err) => {
+      if (err) console.error(`[dns] zapis cache: ${err.message}`);
+    });
+  }, 1000);
+}
+
+function lookup(name, timeoutMs) {
+  if (dnsPending.has(name)) return dnsPending.get(name);
+  let timer;
+  const p = Promise.race([
+    dns.promises.lookup(name).then((r) => r.address),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), timeoutMs); }),
+  ])
+    .then((ip) => {
+      const prev = dnsCache.get(name);
+      dnsCache.set(name, { ip, resolvedAt: Date.now() });
+      if (!prev || prev.ip !== ip) saveDnsCache();
+      return ip;
+    })
+    .finally(() => {
+      clearTimeout(timer);
+      dnsPending.delete(name);
+    });
+  dnsPending.set(name, p);
+  return p;
+}
+
+// Zwraca IP (albo null, gdy nazwy nie da się rozwiązać).
+async function resolveHost(host, cfg) {
+  if (net.isIP(host)) return host;
+  const cached = dnsCache.get(host);
+  if (cached) {
+    if (Date.now() - cached.resolvedAt > cfg.dnsTtl * 1000) {
+      // odświeżenie w tle; w razie błędu zostaje stary adres
+      lookup(host, cfg.dnsTimeout).catch(() => {});
+    }
+    return cached.ip;
+  }
+  try {
+    return await lookup(host, cfg.dnsTimeout);
+  } catch {
+    return null;
+  }
+}
+
 // ---------- stan + pętla sprawdzania ----------
 
 const state = {
   port: null,
   interval: null,
-  hosts: {},  // host -> { host, ping, pingMs, tcp, tcpMs, checkedAt, changedAt }
+  hosts: {},  // host -> { host, ip, ping, pingMs, tcp, tcpMs, checkedAt, changedAt }
   order: [],
   lastRun: null,
 };
@@ -122,14 +191,15 @@ function snapshot() {
 }
 
 async function checkHost(host, cfg) {
-  const [p, t] = await Promise.all([
-    ping(host, cfg.pingTimeout),
-    tcpCheck(host, cfg.port, cfg.tcpTimeout),
-  ]);
+  const ip = await resolveHost(host, cfg);
+  const [p, t] = ip
+    ? await Promise.all([ping(ip, cfg.pingTimeout), tcpCheck(ip, cfg.port, cfg.tcpTimeout)])
+    : [{ up: false, ms: null }, { open: false, ms: null }];
   const prev = state.hosts[host];
   if (!prev) return; // host usunięty w trakcie sprawdzania
   const changed = prev.ping !== p.up || prev.tcp !== t.open;
   Object.assign(prev, {
+    ip: net.isIP(host) ? null : ip,
     ping: p.up,
     pingMs: p.ms,
     tcp: t.open,
@@ -152,7 +222,8 @@ async function runCycle() {
     for (const h of hosts) {
       const old = state.hosts[h];
       if (!old) {
-        next[h] = { host: h, ping: null, pingMs: null, tcp: null, tcpMs: null, checkedAt: null, changedAt: null };
+        const cached = net.isIP(h) ? null : dnsCache.get(h);
+        next[h] = { host: h, ip: cached ? cached.ip : null, ping: null, pingMs: null, tcp: null, tcpMs: null, checkedAt: null, changedAt: null };
       } else if (portChanged) {
         // ping zostaje, wynik portu jest nieaktualny
         next[h] = { ...old, tcp: null, tcpMs: null };

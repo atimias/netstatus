@@ -89,6 +89,7 @@
   col.c-when { width: 70px; }
   td.num { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
   td.host { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  td.host .ip { color: var(--muted); font-size: 11px; margin-left: 6px; }
   td.when { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 
   .badge {
@@ -198,7 +199,8 @@
       '<td><span class="badge"></span><span class="ms"></span></td>' +
       '<td class="when"></td>';
     tr.cells[0].textContent = i + 1;
-    tr.cells[1].textContent = tr.cells[1].title = h.host;
+    tr.cells[1].innerHTML = '<span class="name"></span><span class="ip"></span>';
+    tr.cells[1].firstChild.textContent = h.host;
     return tr;
   }
 
@@ -211,6 +213,8 @@
     tb.className = 'badge ' + tc; tb.textContent = tt;
     tr.cells[2].lastChild.textContent = fmtMs(data.pingMs);
     tr.cells[3].lastChild.textContent = fmtMs(data.tcpMs);
+    tr.cells[1].lastChild.textContent = data.ip || '';
+    tr.cells[1].title = data.ip ? `${data.host} → ${data.ip}` : data.host;
     tr.cells[4].textContent = ago(data.changedAt);
     tr.cells[4].title = data.changedAt ? new Date(data.changedAt).toLocaleString() : '';
     if (flash) {
@@ -232,7 +236,7 @@
     const mul = sort.dir === 'asc' ? 1 : -1;
     const list = order
       .map((h) => rows.get(h))
-      .filter((e) => !q || e.data.host.toLowerCase().includes(q))
+      .filter((e) => !q || e.data.host.toLowerCase().includes(q) || (e.data.ip || '').includes(q))
       .sort((a, b) => {
         const x = rank(a, sort.key), y = rank(b, sort.key);
         return (x < y ? -1 : x > y ? 1 : a.idx - b.idx) * mul;
