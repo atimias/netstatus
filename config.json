@@ -1,0 +1,9 @@
+{
+  "port": 443,
+  "listenPort": 3000,
+  "listenHost": "0.0.0.0",
+  "interval": 5000,
+  "pingTimeout": 1000,
+  "tcpTimeout": 1000,
+  "concurrency": 64
+}

@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Net Status</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%2316a34a'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --panel: #ffffff;
+    --text: #1b1f24;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --row-hover: #f9fafb;
+    --ok: #15803d;
+    --ok-bg: #dcfce7;
+    --bad: #b91c1c;
+    --bad-bg: #fee2e2;
+    --wait: #6b7280;
+    --wait-bg: #f3f4f6;
+    --accent: #2563eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --text: #e6e8eb;
+      --muted: #8b93a1;
+      --border: #262b35;
+      --row-hover: #1c2029;
+      --ok: #4ade80;
+      --ok-bg: rgba(34, 197, 94, .14);
+      --bad: #f87171;
+      --bad-bg: rgba(239, 68, 68, .14);
+      --wait: #9ca3af;
+      --wait-bg: rgba(156, 163, 175, .12);
+      --accent: #60a5fa;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 13px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 10px 12px 16px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-bottom: 8px; }
+  h1 { font-size: 15px; margin: 0; font-weight: 650; }
+  .live { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--wait); }
+  .live.on .dot { background: var(--ok); animation: pulse 2s infinite; }
+  .live.off .dot { background: var(--bad); }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  .stats { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+  .stats b { font-weight: 650; color: var(--text); font-variant-numeric: tabular-nums; }
+  .stats .ok b { color: var(--ok); }
+  .stats .bad b { color: var(--bad); }
+
+  .spacer { flex: 1; }
+  input[type=search] {
+    width: 180px; max-width: 100%;
+    padding: 3px 8px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--panel); color: var(--text); font: inherit;
+  }
+  input[type=search]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: start; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .card:empty, .card.blank { display: none; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { padding: 3px 8px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: var(--row-hover); }
+  th {
+    font-size: 10.5px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .04em;
+    cursor: pointer; user-select: none;
+    padding-top: 5px; padding-bottom: 5px;
+  }
+  th[data-dir]::after { content: " ▲"; font-size: 8px; }
+  th[data-dir="desc"]::after { content: " ▼"; }
+  col.c-num { width: 34px; }
+  col.c-st { width: 118px; }
+  col.c-when { width: 70px; }
+  td.num { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
+  td.host { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+  td.when { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+  .badge {
+    display: inline-block; width: 52px; text-align: center;
+    padding: 0 4px; border-radius: 4px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: .03em; line-height: 17px;
+    background: var(--wait-bg); color: var(--wait);
+    transition: background-color .3s, color .3s;
+  }
+  .badge.ok { background: var(--ok-bg); color: var(--ok); }
+  .badge.bad { background: var(--bad-bg); color: var(--bad); }
+  .ms { color: var(--muted); font-size: 10.5px; margin-left: 5px; font-variant-numeric: tabular-nums; }
+  tr.flash td { animation: flash 1.2s ease-out; }
+  @keyframes flash { from { background: color-mix(in srgb, var(--accent) 18%, transparent); } }
+
+  .empty { padding: 20px; text-align: center; color: var(--muted); }
+  footer { margin-top: 6px; color: var(--muted); font-size: 11px; }
+
+  @media (max-width: 900px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 520px) {
+    .spacer { display: none; }
+    input[type=search] { width: 100%; }
+    col.c-when, col.c-num { width: 0; }
+    td.when, th.when, td.num, th.num { display: none; }
+    col.c-st { width: 64px; }
+    .ms { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Net Status</h1>
+    <span class="live" id="live"><span class="dot"></span><span id="liveText">łączenie…</span></span>
+    <span class="stats">
+      <span><b id="sTotal">–</b> hostów</span>
+      <span class="ok"><b id="sUp">–</b> UP</span>
+      <span class="bad"><b id="sDown">–</b> DOWN</span>
+      <span class="ok"><b id="sOpen">–</b> OPEN</span>
+      <span class="bad"><b id="sClosed">–</b> CLOSED</span>
+    </span>
+    <span class="spacer"></span>
+    <input type="search" id="filter" placeholder="Filtruj…" autocomplete="off">
+  </header>
+
+  <div class="grid" id="grid"></div>
+  <div class="card empty" id="empty" hidden>Brak hostów w hosts.json</div>
+
+  <footer id="footer"></footer>
+</div>
+
+<template id="tableTpl">
+  <div class="card">
+    <table>
+      <colgroup><col class="c-num"><col><col class="c-st"><col class="c-st"><col class="c-when"></colgroup>
+      <thead>
+        <tr>
+          <th class="num" data-key="idx">#</th>
+          <th data-key="host">Host</th>
+          <th data-key="ping">Ping</th>
+          <th data-key="tcp" class="port">Port</th>
+          <th class="when" data-key="changedAt">Zmiana</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</template>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const COLS = 2;
+  const rows = new Map();   // host -> { tr, data, idx }
+  let order = [];
+  let port = null, interval = null, lastRun = null;
+  let sort = { key: 'idx', dir: 'asc' };
+
+  // dwie tabele obok siebie
+  const tables = Array.from({ length: COLS }, () => {
+    const card = $('tableTpl').content.firstElementChild.cloneNode(true);
+    $('grid').appendChild(card);
+    return { card, tbody: card.querySelector('tbody') };
+  });
+
+  const badge = (val, okText, badText) => {
+    if (val === null || val === undefined) return ['', '…'];
+    return val ? ['ok', okText] : ['bad', badText];
+  };
+  const fmtMs = (ms) => (ms == null ? '' : (ms < 10 ? ms.toFixed(1) : Math.round(ms)) + ' ms');
+  const ago = (t) => {
+    if (!t) return '–';
+    const s = Math.round((Date.now() - t) / 1000);
+    if (s < 60) return s + ' s';
+    if (s < 3600) return Math.floor(s / 60) + ' min';
+    if (s < 86400) return Math.floor(s / 3600) + ' h';
+    return Math.floor(s / 86400) + ' d';
+  };
+
+  function makeRow(h, i) {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td class="num"></td><td class="host"></td>' +
+      '<td><span class="badge"></span><span class="ms"></span></td>' +
+      '<td><span class="badge"></span><span class="ms"></span></td>' +
+      '<td class="when"></td>';
+    tr.cells[0].textContent = i + 1;
+    tr.cells[1].textContent = tr.cells[1].title = h.host;
+    return tr;
+  }
+
+  function paint(entry, flash) {
+    const { tr, data } = entry;
+    const [pc, pt] = badge(data.ping, 'UP', 'DOWN');
+    const [tc, tt] = badge(data.tcp, 'OPEN', 'CLOSED');
+    const pb = tr.cells[2].firstChild, tb = tr.cells[3].firstChild;
+    pb.className = 'badge ' + pc; pb.textContent = pt;
+    tb.className = 'badge ' + tc; tb.textContent = tt;
+    tr.cells[2].lastChild.textContent = fmtMs(data.pingMs);
+    tr.cells[3].lastChild.textContent = fmtMs(data.tcpMs);
+    tr.cells[4].textContent = ago(data.changedAt);
+    tr.cells[4].title = data.changedAt ? new Date(data.changedAt).toLocaleString() : '';
+    if (flash) {
+      tr.classList.remove('flash'); void tr.offsetWidth; tr.classList.add('flash');
+    }
+  }
+
+  function rank(e, key) {
+    const d = e.data;
+    if (key === 'idx') return e.idx;
+    if (key === 'host') return d.host.toLowerCase();
+    if (key === 'changedAt') return d.changedAt || 0;
+    // statusy: DOWN/CLOSED na górze przy sortowaniu rosnącym
+    return d[key] === null ? 1 : d[key] ? 2 : 0;
+  }
+
+  function render() {
+    const q = $('filter').value.trim().toLowerCase();
+    const mul = sort.dir === 'asc' ? 1 : -1;
+    const list = order
+      .map((h) => rows.get(h))
+      .filter((e) => !q || e.data.host.toLowerCase().includes(q))
+      .sort((a, b) => {
+        const x = rank(a, sort.key), y = rank(b, sort.key);
+        return (x < y ? -1 : x > y ? 1 : a.idx - b.idx) * mul;
+      });
+    // pierwsza połowa w lewej kolumnie, druga w prawej
+    const per = Math.ceil(list.length / COLS) || 1;
+    tables.forEach((t, c) => {
+      const part = list.slice(c * per, (c + 1) * per);
+      t.tbody.replaceChildren(...part.map((e) => e.tr));
+      t.card.classList.toggle('blank', part.length === 0);
+    });
+    document.querySelectorAll('th').forEach((th) => {
+      if (th.dataset.key === sort.key) th.dataset.dir = sort.dir; else delete th.dataset.dir;
+    });
+    $('empty').hidden = order.length > 0;
+    stats();
+  }
+
+  function stats() {
+    let up = 0, down = 0, open = 0, closed = 0;
+    for (const { data } of rows.values()) {
+      if (data.ping === true) up++; else if (data.ping === false) down++;
+      if (data.tcp === true) open++; else if (data.tcp === false) closed++;
+    }
+    $('sTotal').textContent = rows.size;
+    $('sUp').textContent = up;
+    $('sDown').textContent = down;
+    $('sOpen').textContent = open;
+    $('sClosed').textContent = closed;
+    document.title = (down ? `(${down} DOWN) ` : '') + 'Net Status';
+  }
+
+  function footer() {
+    $('footer').textContent =
+      `Port TCP: ${port ?? '–'} · odświeżanie co ${interval ? interval / 1000 + ' s' : '–'}` +
+      (lastRun ? ` · ostatni pełny cykl: ${new Date(lastRun).toLocaleTimeString()}` : '');
+  }
+
+  function applySnapshot(s) {
+    port = s.port; interval = s.interval; lastRun = s.lastRun;
+    document.querySelectorAll('th.port').forEach((th) => { th.textContent = 'Port ' + (port ?? ''); });
+    rows.clear();
+    order = s.hosts.map((h) => h.host);
+    s.hosts.forEach((h, i) => {
+      const entry = { tr: makeRow(h, i), data: h, idx: i };
+      rows.set(h.host, entry);
+      paint(entry, false);
+    });
+    render();
+    footer();
+  }
+
+  let resortTimer = null;
+  function applyHost(h) {
+    const e = rows.get(h.host);
+    if (!e) return;
+    const changed = e.data.ping !== h.ping || e.data.tcp !== h.tcp;
+    const hadResult = e.data.ping !== null || e.data.tcp !== null;
+    e.data = h;
+    paint(e, changed && hadResult);
+    stats();
+    // sortowanie po statusie wymaga przestawienia wierszy – grupujemy w jedną operację
+    if (changed && sort.key !== 'idx' && sort.key !== 'host' && !resortTimer) {
+      resortTimer = setTimeout(() => { resortTimer = null; render(); }, 150);
+    }
+  }
+
+  function connect() {
+    const es = new EventSource('/api/events');
+    es.addEventListener('snapshot', (ev) => applySnapshot(JSON.parse(ev.data)));
+    es.addEventListener('host', (ev) => applyHost(JSON.parse(ev.data)));
+    es.addEventListener('cycle', (ev) => { lastRun = JSON.parse(ev.data).lastRun; footer(); });
+    es.onopen = () => { $('live').className = 'live on'; $('liveText').textContent = 'na żywo'; };
+    es.onerror = () => { $('live').className = 'live off'; $('liveText').textContent = 'brak połączenia'; };
+  }
+
+  $('grid').addEventListener('click', (ev) => {
+    const th = ev.target.closest('th');
+    if (!th) return;
+    const key = th.dataset.key;
+    sort = { key, dir: sort.key === key && sort.dir === 'asc' ? 'desc' : 'asc' };
+    render();
+  });
+  $('filter').addEventListener('input', render);
+
+  // odświeżanie "x s"
+  setInterval(() => { for (const e of rows.values()) e.tr.cells[4].textContent = ago(e.data.changedAt); }, 1000);
+
+  connect();
+})();
+</script>
+</body>
+</html>
