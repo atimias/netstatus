@@ -1,5 +1,8 @@
 # netstatus
 
+<img width="1406" height="145" alt="image" src="https://github.com/user-attachments/assets/f6bfd460-7810-4d30-9e4e-a843942f6c56" />
+
+
 Prosty monitor hostów z podglądem w przeglądarce. Dla każdego hosta pokazuje:
 
 - **PING** – `UP` / `DOWN`
