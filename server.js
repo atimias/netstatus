@@ -41,8 +41,42 @@ function loadConfig() {
   }
 }
 
-// hosts.json: jeden host (IP lub nazwa) na linię; puste linie i "# komentarze" są pomijane.
-// Akceptowana jest też tablica JSON: ["1.2.3.4", "example.com"].
+const MAX_RANGE_HOSTS = 65536; // największa podsieć do rozwinięcia: /16
+const warned = new Set();
+function warnOnce(msg) {
+  if (warned.has(msg)) return;
+  warned.add(msg);
+  console.error(msg);
+}
+
+// "10.0.0.0/24" -> ["10.0.0.1", ..., "10.0.0.254"]; dla innych wpisów zwraca [wpis].
+// Adres sieci i broadcast są pomijane (poza /31 i /32).
+function expandEntry(entry) {
+  const m = entry.match(/^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/);
+  if (!m) return [entry];
+  const bits = Number(m[2]);
+  if (net.isIPv4(m[1]) === false || bits > 32) {
+    warnOnce(`[hosts] nieprawidłowa podsieć: ${entry}`);
+    return [];
+  }
+  const size = 2 ** (32 - bits);
+  if (size > MAX_RANGE_HOSTS) {
+    warnOnce(`[hosts] podsieć ${entry} jest za duża (maks. /16) – pomijam`);
+    return [];
+  }
+  const ipNum = m[1].split('.').reduce((a, o) => a * 256 + Number(o), 0);
+  const base = ipNum - (ipNum % size);
+  const [from, to] = bits >= 31 ? [base, base + size - 1] : [base + 1, base + size - 2];
+  const out = [];
+  for (let n = from; n <= to; n++) {
+    out.push([n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.'));
+  }
+  return out;
+}
+
+// hosts.json: jeden host (IP, nazwa lub podsieć CIDR np. 10.0.0.0/24) na linię;
+// puste linie i "# komentarze" są pomijane.
+// Akceptowana jest też tablica JSON: ["1.2.3.4", "example.com", "10.0.0.0/24"].
 function loadHosts() {
   let raw;
   try {
@@ -60,7 +94,8 @@ function loadHosts() {
   const seen = new Set();
   return list
     .map((l) => l.replace(/#.*/, '').trim().replace(/^["',\s]+|["',\s]+$/g, ''))
-    .filter((h) => h && !seen.has(h) && seen.add(h));
+    .flatMap((l) => (l ? expandEntry(l) : []))
+    .filter((h) => !seen.has(h) && seen.add(h));
 }
 
 // ---------- testy ----------

@@ -40,13 +40,17 @@ Port można też podać jednorazowo: `PORT=8080 npm start`.
 
 ## hosts.json
 
-Jeden host na linię – adres IP albo nazwa. Puste linie i komentarze `#` są pomijane.
+Jeden wpis na linię – adres IP, nazwa albo podsieć (CIDR). Puste linie i komentarze `#` są pomijane.
 
 ```
 192.168.1.1
 8.8.8.8
-google.com   # komentarz
+google.com     # komentarz
+10.0.0.0/24    # cała podsieć: 10.0.0.1 – 10.0.0.254
 ```
+
+Podsieć jest rozwijana na pojedyncze adresy; adres sieci i broadcast są pomijane (poza /31 i /32).
+Największa obsługiwana podsieć to /16. Powtórzone adresy są pokazywane tylko raz.
 
 Działa też zwykła tablica JSON: `["192.168.1.1", "google.com"]`.
 

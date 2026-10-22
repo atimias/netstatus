@@ -225,7 +225,12 @@
   function rank(e, key) {
     const d = e.data;
     if (key === 'idx') return e.idx;
-    if (key === 'host') return d.host.toLowerCase();
+    if (key === 'host') {
+      // adresy IPv4 sortowane numerycznie (10.0.0.2 przed 10.0.0.10)
+      return /^\d+\.\d+\.\d+\.\d+$/.test(d.host)
+        ? d.host.split('.').map((o) => o.padStart(3, '0')).join('.')
+        : d.host.toLowerCase();
+    }
     if (key === 'changedAt') return d.changedAt || 0;
     // statusy: DOWN/CLOSED na górze przy sortowaniu rosnącym
     return d[key] === null ? 1 : d[key] ? 2 : 0;
