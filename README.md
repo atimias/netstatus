@@ -30,7 +30,8 @@ Port można też podać jednorazowo: `PORT=8080 npm start`.
 
 ## Strona www
 
-- hosty w dwóch kolumnach (na wąskim ekranie w jednej)
+- hosty w dwóch kolumnach (na wąskim ekranie w jednej); gdy lista zawiera wyłącznie adresy IP
+  (np. same podsieci), strona zajmuje całą szerokość okna i mieści tyle kolumn, ile się zmieści
 - przy nazwie hosta – rozwiązany adres IP
 - status PING i PORT z czasem odpowiedzi w ms
 - kolumna „Zmiana” – ile czasu minęło od ostatniej zmiany statusu (pełna data po najechaniu myszą)

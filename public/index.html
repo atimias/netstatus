@@ -45,6 +45,7 @@
     color: var(--text);
     font: 13px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
+  .wrap.ip-only { max-width: none; }
   .wrap { max-width: 1400px; margin: 0 auto; padding: 10px 12px 16px; }
 
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-bottom: 8px; }
@@ -69,7 +70,7 @@
   }
   input[type=search]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: start; }
+  .grid { display: grid; grid-template-columns: 1fr; gap: 8px; align-items: start; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
   .card:empty, .card.blank { display: none; }
   table { width: 100%; border-collapse: collapse; table-layout: fixed; }
@@ -108,9 +109,6 @@
   .empty { padding: 20px; text-align: center; color: var(--muted); }
   footer { margin-top: 6px; color: var(--muted); font-size: 11px; }
 
-  @media (max-width: 900px) {
-    .grid { grid-template-columns: 1fr; }
-  }
   @media (max-width: 520px) {
     .spacer { display: none; }
     input[type=search] { width: 100%; }
@@ -122,7 +120,7 @@
 </style>
 </head>
 <body>
-<div class="wrap">
+<div class="wrap" id="wrap">
   <header>
     <h1>Net Status</h1>
     <span class="live" id="live"><span class="dot"></span><span id="liveText">łączenie…</span></span>
@@ -164,18 +162,34 @@
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
-  const COLS = 2;
+  const GAP = 8;
+  const IP_TABLE_MIN = 430; // min. szerokość tabeli, gdy nie ma kolumny na rozwiązane IP
+  const isIPv4 = (h) => /^\d+\.\d+\.\d+\.\d+$/.test(h);
   const rows = new Map();   // host -> { tr, data, idx }
   let order = [];
   let port = null, interval = null, lastRun = null;
   let sort = { key: 'idx', dir: 'asc' };
 
-  // dwie tabele obok siebie
-  const tables = Array.from({ length: COLS }, () => {
-    const card = $('tableTpl').content.firstElementChild.cloneNode(true);
-    $('grid').appendChild(card);
-    return { card, tbody: card.querySelector('tbody') };
-  });
+  // tabele obok siebie: 2 przy nazwach hostów, przy samych adresach IP tyle, ile się zmieści
+  const tables = [];
+  let ipOnly = false;
+
+  function columnCount() {
+    const w = $('grid').clientWidth;
+    if (!ipOnly) return w < 880 ? 1 : 2;
+    return Math.max(1, Math.floor((w + GAP) / (IP_TABLE_MIN + GAP)));
+  }
+
+  function ensureTables(n) {
+    while (tables.length < n) {
+      const card = $('tableTpl').content.firstElementChild.cloneNode(true);
+      $('grid').appendChild(card);
+      card.querySelector('th.port').textContent = 'Port ' + (port ?? '');
+      tables.push({ card, tbody: card.querySelector('tbody') });
+    }
+    while (tables.length > n) tables.pop().card.remove();
+    $('grid').style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`;
+  }
 
   const badge = (val, okText, badText) => {
     if (val === null || val === undefined) return ['', '…'];
@@ -227,7 +241,7 @@
     if (key === 'idx') return e.idx;
     if (key === 'host') {
       // adresy IPv4 sortowane numerycznie (10.0.0.2 przed 10.0.0.10)
-      return /^\d+\.\d+\.\d+\.\d+$/.test(d.host)
+      return isIPv4(d.host)
         ? d.host.split('.').map((o) => o.padStart(3, '0')).join('.')
         : d.host.toLowerCase();
     }
@@ -246,8 +260,11 @@
         const x = rank(a, sort.key), y = rank(b, sort.key);
         return (x < y ? -1 : x > y ? 1 : a.idx - b.idx) * mul;
       });
-    // pierwsza połowa w lewej kolumnie, druga w prawej
-    const per = Math.ceil(list.length / COLS) || 1;
+    // lista dzielona po kolei na kolumny (pierwsza część w lewej itd.)
+    // nie rozbijamy krótkiej listy na wiele kolumn (min. ~10 wierszy w kolumnie)
+    const cols = Math.max(1, Math.min(columnCount(), Math.ceil(list.length / 10)));
+    ensureTables(cols);
+    const per = Math.ceil(list.length / cols) || 1;
     tables.forEach((t, c) => {
       const part = list.slice(c * per, (c + 1) * per);
       t.tbody.replaceChildren(...part.map((e) => e.tr));
@@ -285,6 +302,8 @@
     document.querySelectorAll('th.port').forEach((th) => { th.textContent = 'Port ' + (port ?? ''); });
     rows.clear();
     order = s.hosts.map((h) => h.host);
+    ipOnly = order.length > 0 && order.every(isIPv4);
+    $('wrap').classList.toggle('ip-only', ipOnly);
     s.hosts.forEach((h, i) => {
       const entry = { tr: makeRow(h, i), data: h, idx: i };
       rows.set(h.host, entry);
@@ -326,6 +345,12 @@
     render();
   });
   $('filter').addEventListener('input', render);
+
+  let lastCols = 0;
+  new ResizeObserver(() => {
+    const n = columnCount();
+    if (n !== lastCols) { lastCols = n; render(); }
+  }).observe($('grid'));
 
   // odświeżanie "x s"
   setInterval(() => { for (const e of rows.values()) e.tr.cells[4].textContent = ago(e.data.changedAt); }, 1000);
