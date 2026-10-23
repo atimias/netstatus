@@ -75,8 +75,10 @@ function expandEntry(entry) {
 }
 
 // hosts.json: jeden host (IP, nazwa lub podsieć CIDR np. 10.0.0.0/24) na linię;
-// puste linie i "# komentarze" są pomijane.
+// puste linie i "# komentarze" są pomijane. Przy adresie IP można podać wyświetlaną nazwę
+// po średniku lub przecinku: "192.168.1.1;Router".
 // Akceptowana jest też tablica JSON: ["1.2.3.4", "example.com", "10.0.0.0/24"].
+// Zwraca [{ host, label }] (label = null, gdy nie podano nazwy).
 function loadHosts() {
   let raw;
   try {
@@ -91,11 +93,20 @@ function loadHosts() {
     if (Array.isArray(parsed)) list = parsed.map(String);
   } catch { /* nie JSON – format linia po linii */ }
   if (!list) list = raw.split(/\r?\n/);
-  const seen = new Set();
-  return list
-    .map((l) => l.replace(/#.*/, '').trim().replace(/^["',\s]+|["',\s]+$/g, ''))
-    .flatMap((l) => (l ? expandEntry(l) : []))
-    .filter((h) => !seen.has(h) && seen.add(h));
+  const out = new Map(); // host -> label
+  for (let l of list) {
+    l = l.replace(/#.*/, '').trim().replace(/^["',\s]+|["',\s]+$/g, '');
+    if (!l) continue;
+    const [entry, ...rest] = l.split(/[;,]/);
+    const host = entry.trim();
+    const label = rest.join(',').trim() || null;
+    if (label && !net.isIP(host)) warnOnce(`[hosts] nazwę można podać tylko przy adresie IP: ${l}`);
+    for (const h of expandEntry(host)) {
+      if (!out.has(h)) out.set(h, null);
+      if (label && net.isIP(host) && !out.get(h)) out.set(h, label);
+    }
+  }
+  return [...out].map(([host, label]) => ({ host, label }));
 }
 
 // ---------- testy ----------
@@ -205,7 +216,7 @@ async function resolveHost(host, cfg) {
 const state = {
   port: null,
   interval: null,
-  hosts: {},  // host -> { host, ip, ping, pingMs, tcp, tcpMs, checkedAt, changedAt }
+  hosts: {},  // host -> { host, label, ip, ping, pingMs, tcp, tcpMs, checkedAt, changedAt }
   order: [],
   lastRun: null,
 };
@@ -247,18 +258,20 @@ async function checkHost(host, cfg) {
 
 async function runCycle() {
   const cfg = loadConfig();
-  const hosts = loadHosts();
+  const entries = loadHosts();
+  const hosts = entries.map((e) => e.host);
 
   const listChanged =
     hosts.length !== state.order.length || hosts.some((h, i) => h !== state.order[i]);
+  const labelsChanged = entries.some((e) => state.hosts[e.host] && state.hosts[e.host].label !== e.label);
   const portChanged = state.port !== cfg.port;
-  if (listChanged || portChanged) {
+  if (listChanged || portChanged || labelsChanged) {
     const next = {};
     for (const h of hosts) {
       const old = state.hosts[h];
       if (!old) {
         const cached = net.isIP(h) ? null : dnsCache.get(h);
-        next[h] = { host: h, ip: cached ? cached.ip : null, ping: null, pingMs: null, tcp: null, tcpMs: null, checkedAt: null, changedAt: null };
+        next[h] = { host: h, label: null, ip: cached ? cached.ip : null, ping: null, pingMs: null, tcp: null, tcpMs: null, checkedAt: null, changedAt: null };
       } else if (portChanged) {
         // ping zostaje, wynik portu jest nieaktualny
         next[h] = { ...old, tcp: null, tcpMs: null };
@@ -266,12 +279,13 @@ async function runCycle() {
         next[h] = old;
       }
     }
+    for (const e of entries) next[e.host].label = e.label;
     state.hosts = next;
     state.order = hosts;
   }
   state.port = cfg.port;
   state.interval = cfg.interval;
-  if (listChanged || portChanged) broadcast('snapshot', snapshot());
+  if (listChanged || portChanged || labelsChanged) broadcast('snapshot', snapshot());
 
   // równoległe sprawdzanie z limitem
   const queue = [...hosts];

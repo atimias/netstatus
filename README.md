@@ -48,7 +48,13 @@ Jeden wpis na linię – adres IP, nazwa albo podsieć (CIDR). Puste linie i kom
 8.8.8.8
 google.com     # komentarz
 10.0.0.0/24    # cała podsieć: 10.0.0.1 – 10.0.0.254
+192.168.1.10;Drukarka   # adres IP z wyświetlaną nazwą
+192.168.1.20, NAS       # separatorem może być też przecinek
 ```
+
+Przy adresie IP można po średniku (`;`) lub przecinku (`,`) podać nazwę wyświetlaną na stronie
+zamiast adresu – adres jest wtedy pokazywany obok nazwy, a filtr szuka po obu.
+Dla nazw DNS i podsieci nazwa jest ignorowana.
 
 Podsieć jest rozwijana na pojedyncze adresy; adres sieci i broadcast są pomijane (poza /31 i /32).
 Największa obsługiwana podsieć to /16. Powtórzone adresy są pokazywane tylko raz.

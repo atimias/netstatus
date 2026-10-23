@@ -214,7 +214,7 @@
       '<td class="when"></td>';
     tr.cells[0].textContent = i + 1;
     tr.cells[1].innerHTML = '<span class="name"></span><span class="ip"></span>';
-    tr.cells[1].firstChild.textContent = h.host;
+    tr.cells[1].firstChild.textContent = h.label || h.host;
     return tr;
   }
 
@@ -227,8 +227,11 @@
     tb.className = 'badge ' + tc; tb.textContent = tt;
     tr.cells[2].lastChild.textContent = fmtMs(data.pingMs);
     tr.cells[3].lastChild.textContent = fmtMs(data.tcpMs);
-    tr.cells[1].lastChild.textContent = data.ip || '';
-    tr.cells[1].title = data.ip ? `${data.host} → ${data.ip}` : data.host;
+    // przy nazwie z hosts.json ("IP;nazwa") obok pokazujemy adres IP
+    const name = data.label || data.host;
+    const ip = data.ip || (data.label ? data.host : '');
+    tr.cells[1].lastChild.textContent = ip;
+    tr.cells[1].title = ip ? `${name} → ${ip}` : name;
     tr.cells[4].textContent = ago(data.changedAt);
     tr.cells[4].title = data.changedAt ? new Date(data.changedAt).toLocaleString() : '';
     if (flash) {
@@ -240,6 +243,7 @@
     const d = e.data;
     if (key === 'idx') return e.idx;
     if (key === 'host') {
+      if (d.label) return d.label.toLowerCase();
       // adresy IPv4 sortowane numerycznie (10.0.0.2 przed 10.0.0.10)
       return isIPv4(d.host)
         ? d.host.split('.').map((o) => o.padStart(3, '0')).join('.')
@@ -255,7 +259,8 @@
     const mul = sort.dir === 'asc' ? 1 : -1;
     const list = order
       .map((h) => rows.get(h))
-      .filter((e) => !q || e.data.host.toLowerCase().includes(q) || (e.data.ip || '').includes(q))
+      .filter((e) => !q || e.data.host.toLowerCase().includes(q) || (e.data.ip || '').includes(q) ||
+        (e.data.label || '').toLowerCase().includes(q))
       .sort((a, b) => {
         const x = rank(a, sort.key), y = rank(b, sort.key);
         return (x < y ? -1 : x > y ? 1 : a.idx - b.idx) * mul;
@@ -302,7 +307,7 @@
     document.querySelectorAll('th.port').forEach((th) => { th.textContent = 'Port ' + (port ?? ''); });
     rows.clear();
     order = s.hosts.map((h) => h.host);
-    ipOnly = order.length > 0 && order.every(isIPv4);
+    ipOnly = order.length > 0 && s.hosts.every((h) => isIPv4(h.host) && !h.label);
     $('wrap').classList.toggle('ip-only', ipOnly);
     s.hosts.forEach((h, i) => {
       const entry = { tr: makeRow(h, i), data: h, idx: i };
